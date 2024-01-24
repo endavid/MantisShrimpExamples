@@ -1,5 +1,5 @@
-# WIP for #genuary10
-
+// #genuary10 Hexagonal, using Mesh Shaders.
+// Requires Mantis Shrimp v1.1
 static constexpr constant float PI = 3.1415926536;
 
 // https://github.com/endavid/VidEngine/blob/master/VidFramework/VidFramework/sdk/math/Matrix.swift
@@ -47,14 +47,12 @@ void objectStage()
 {
     const uint32_t gridWidth = uni.gridSize.x;
     const uint32_t gridHeight = uni.gridSize.y;
-    const uint32_t meshWidth = uni.gridSize.z;
-    const uint32_t meshHeight = uni.gridSize.w;
-    const uint32_t width = meshWidth * gridWidth;
-    const uint32_t height = meshHeight * gridHeight;
-    const uint32_t numQuadsPerObject = meshWidth * meshHeight;
+    const uint32_t width = gridWidth;
+    const uint32_t height = gridHeight;
+    const uint32_t n = width * height;
 
-    payload.vertexCount = numQuadsPerObject;
-    payload.primitiveCount = numQuadsPerObject;
+    payload.vertexCount = 1;
+    payload.primitiveCount = 1;
     
     float scaleX = 1.0 / float(width);
     float scaleY = 1.0 / float(height);
@@ -62,36 +60,38 @@ void objectStage()
     uint oi = positionInGrid.x;
     uint oj = positionInGrid.y;
     
-    float2 objCenter = float2((2.0 * oi - gridWidth + 1.0)/float(gridWidth),
-                              (2.0 * oj - gridHeight + 1.0)/float(gridHeight));
+    float2 offset = oj % 2 == 0 ? float2(0.5,3) : float2(1.5,3);
+    float2 objCenter = float2((2.0 * oi - gridWidth + offset.x)/float(gridWidth),
+                              (1.7 * oj - gridHeight + offset.y)/float(gridHeight));
     
     float2 texel = (objCenter + 1.0) * 0.5;
     texel.y = 1.0 - texel.y;
     payload.uv = texel;
 
-    for (uint mj = 0; mj < meshHeight; mj++)
-    {
-        for (uint mi = 0; mi < meshWidth; mi++)
-        {
-            uint quadIndex = mj * meshWidth + mi;
-            float2 offset = float2((2.0 * mi - meshWidth + 1.0)/float(width),
-                                   (2.0 * mj - meshHeight + 1.0)/float(height));
-            float2 p = objCenter + offset;
-            float2 uv = (p + 1.0) * 0.5;
-            uv.y = 1.0 - uv.y;
-            payload.vertices[quadIndex].position = float4(0, 0, 0, 1);
-            payload.vertices[quadIndex].normal = float4(0,0,1,1);
-            payload.vertices[quadIndex].uv = uv;
-        }
-    }
+    float2 uv = (objCenter + 1.0) * 0.5;
+    uv.y = 1.0 - uv.y;
+    payload.vertices[0].position = float4(0,0,0,1);
+    payload.vertices[0].normal = float4(0,0,1,1);
+    payload.vertices[0].uv = uv;
+    // for animation
+    float step = 500 * uni.time / float(n);
+    int currentObj = int(step) % n;
+    float angle = 2.0 * PI * fract(step);
+    // zig-zag ascending order
+    int order = gridWidth * oj + ((oj % 2 == 0) ? oi : gridWidth - 1 - oi);
+    int orderReverse = n - 1 - order;
     // transform
     float aspect = uni.resolution.x / uni.resolution.y;
-    float4x4 projection = perspective(0.5, -2, 4, aspect);
+    float4x4 projection = perspective(0.1, 0.01, 50, aspect);
     float4x4 view = rotationY(0);
-    view[3] = float4(0, 0, -10, 1);
-    float t = 0;//uni.time;
-    float4x4 modelTr = rotationX(-PI/3.8) * rotationY(-PI/4 + 0.5 * sin(t));
-    modelTr[3] = float4(objCenter, 0, 1);
+    int repeat = 17;
+    currentObj = currentObj % repeat;
+    order = order % repeat;
+    orderReverse = orderReverse % repeat;
+    float phaseY = currentObj == order ? angle : 0;
+    float phaseX = currentObj == orderReverse ? angle : 0;
+    float4x4 modelTr = rotationX(-PI/3.8 + phaseX) * rotationY(-PI/4 + phaseY);
+    modelTr[3] = float4(objCenter, -20, 1);
     payload.transform = projection * view * modelTr;
     // Set the output submesh count for the mesh shader.
     // Because the mesh shader is only producing one mesh, the threadgroup grid size is 1 x 1 x 1.
@@ -110,7 +110,7 @@ void meshStage()
     // Create cube vertices centered around the object position
     if (lid < payload.vertexCount)
     {
-        float2 size = payload.size / uni.scale;
+        float2 size = 1.4 * payload.size / uni.scale;
         float sizez = max(size.x, size.y);
         for (uint k = 0; k < 2; k++) {
           for (uint i = 0; i < 2; i++) {
@@ -137,24 +137,24 @@ void meshStage()
     {
         int faces[36] = {
             // front
-            0, 2, 1, 1, 2, 3,
+            3, 1, 0, 0, 2, 3,
             // right
-            2, 6, 3, 3, 6, 7,
+            7, 3, 2, 2, 6, 7,
             // left
-            4, 0, 5, 5, 0, 1,
+            1, 5, 4, 4, 0, 1,
             // up
-            4, 6, 0, 0, 6, 2,
+            7, 5, 1, 1, 3, 7,
             // down
-            1, 3, 5, 5, 3, 7,
+            2, 0, 4, 4, 6, 2,
             // back
-            6, 4, 7, 7, 4, 5
+            5, 7, 6, 6, 4, 5
         };
         float3 colors[6] = {
             float3(151,224,255), // front
             float3(0,111,174), // right
             float3(243,249,131), // left
-            float3(92,50,11), // down           
             float3(0,161,255), // up
+            float3(92,50,11), // down           
             float3(249,186,0) // back
         };
         uint k = 8 * lid;

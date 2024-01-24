@@ -1,4 +1,5 @@
 // #genuary9 ASCII, using Mesh Shaders.
+// Requires Mantis Shrimp v1.1
 float nrand(float2 uv)
 {
     return fract(sin(dot(uv, float2(12.9898, 78.233))) * 43758.5453);
